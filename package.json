@@ -1,0 +1,13 @@
+{
+  "name": "squad-bac-a-sable",
+  "version": "1.0.0",
+  "description": "Dépôt d'essai de l'agent de code de Squad+ : un petit calcul de factures, avec ses tests.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
