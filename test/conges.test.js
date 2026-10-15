@@ -61,6 +61,22 @@ test('critère 7 : l\'Alsace-Moselle a 13 jours fériés en 2026, avec le Vendre
   assert.deepEqual(dates(joursFeries(2026, 'alsace-moselle')), attendu);
 });
 
+test('le 26 décembre en Alsace-Moselle s\'appelle « Saint-Étienne », avec un trait d\'union', () => {
+  const alsace = joursFeries(2026, 'alsace-moselle');
+  assert.equal(alsace.find((f) => f.date === '2026-12-26')?.libelle, 'Saint-Étienne');
+});
+
+test('deux fêtes le même jour donnent une seule entrée au libellé fusionné (2008 : 1er mai et Ascension)', () => {
+  const national = joursFeries(2008, 'national');
+  assert.equal(national.length, 10);
+  const premierMai = national.filter((f) => f.date === '2008-05-01');
+  assert.deepEqual(premierMai, [{ date: '2008-05-01', libelle: 'Fête du Travail et Ascension' }]);
+  assert.equal(new Set(dates(national)).size, national.length);
+  const alsace = joursFeries(2008, 'alsace-moselle');
+  assert.equal(alsace.length, 12);
+  assert.equal(alsace.find((f) => f.date === '2008-05-01')?.libelle, 'Fête du Travail et Ascension');
+});
+
 test('critère 8 : les fêtes mobiles de 2025 sont calculées', () => {
   const national = joursFeries(2025, 'national');
   const libelle = (feries, date) => feries.find((f) => f.date === date)?.libelle;
@@ -97,6 +113,12 @@ test('critère 9 : une date mal formée lève une RangeError', () => {
     assert.throws(() => joursOuvres({ debut, fin: '2026-05-10', site: 'national' }), RangeError);
     assert.throws(() => joursOuvres({ debut: '2026-05-01', fin: debut, site: 'national' }), RangeError);
   }
+});
+
+test('une demande absente ou nulle lève une RangeError', () => {
+  assert.throws(() => joursOuvres(), RangeError);
+  assert.throws(() => joursOuvres(null), RangeError);
+  assert.throws(() => joursOuvres('2026-05-04'), RangeError);
 });
 
 test('une date inexistante lève une RangeError', () => {

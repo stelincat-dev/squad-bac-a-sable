@@ -66,7 +66,7 @@ function paques(annee) {
   return Date.UTC(annee, mois - 1, jour);
 }
 
-/** Jours fériés d'une année (2000 à 2100) pour un site, en tableau d'objets { date, libelle } triés par date. */
+/** Jours fériés d'une année (2000 à 2100) pour un site, en tableau d'objets { date, libelle } triés par date, une seule entrée par date. */
 export function joursFeries(annee, site) {
   verifierAnnee(annee);
   verifierSite(site);
@@ -80,14 +80,26 @@ export function joursFeries(annee, site) {
   if (site === 'alsace-moselle') {
     feries.push(
       { t: p - 2 * MS_PAR_JOUR, libelle: 'Vendredi saint' },
-      { t: Date.UTC(annee, 11, 26), libelle: 'Saint Étienne' },
+      { t: Date.UTC(annee, 11, 26), libelle: 'Saint-Étienne' },
     );
   }
-  return feries.sort((x, y) => x.t - y.t).map(({ t, libelle }) => ({ date: formater(t), libelle }));
+  // Tri stable : deux fêtes du même jour (ex. 2008-05-01) gardent l'ordre de la liste et sont fusionnées en une entrée.
+  const resultat = [];
+  for (const { t, libelle } of feries.sort((x, y) => x.t - y.t)) {
+    const date = formater(t);
+    const precedent = resultat[resultat.length - 1];
+    if (precedent && precedent.date === date) precedent.libelle += ` et ${libelle}`;
+    else resultat.push({ date, libelle });
+  }
+  return resultat;
 }
 
 /** Jours ouvrés d'une demande { debut, fin, site }, bornes comprises, hors week-ends et jours fériés du site : rend { joursOuvres }. */
-export function joursOuvres({ debut, fin, site } = {}) {
+export function joursOuvres(demande) {
+  if (demande === null || typeof demande !== 'object') {
+    throw new RangeError('La demande doit être un objet { debut, fin, site }.');
+  }
+  const { debut, fin, site } = demande;
   const tDebut = lireDate(debut, 'début');
   const tFin = lireDate(fin, 'fin');
   verifierSite(site);

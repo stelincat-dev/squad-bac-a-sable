@@ -20,7 +20,7 @@ Brique de calcul pure, appelée par l'intranet RH : elle ne lit jamais l'horloge
 
 - `annee` : entier de 2000 à 2100.
 - `site` : `national` ou `alsace-moselle`.
-- Rend un tableau d'objets `{ date, libelle }` triés par date croissante : `date` au format `AAAA-MM-JJ`, `libelle` texte non vide (ex. `Lundi de Pâques`). Fêtes mobiles calculées pour toute année de la plage (lundi de Pâques, Ascension, lundi de Pentecôte, et Vendredi saint en Alsace-Moselle). 11 dates par an sur le site `national`, 13 en `alsace-moselle`.
+- Rend un tableau d'objets `{ date, libelle }` triés par date croissante : `date` au format `AAAA-MM-JJ`, `libelle` texte non vide (ex. `Lundi de Pâques`). Fêtes mobiles calculées pour toute année de la plage (lundi de Pâques, Ascension, lundi de Pentecôte, et Vendredi saint en Alsace-Moselle). Une seule entrée par date : quand deux fêtes tombent le même jour, elles sont fusionnées en une entrée dont le libellé réunit les deux, dans l'ordre chronologique de la liste (ex. en 2008, `{ date: '2008-05-01', libelle: 'Fête du Travail et Ascension' }`). Sur le site `national`, 11 dates par an en général, moins quand deux fêtes tombent le même jour ; en `alsace-moselle`, 13 dates par an en général, moins quand deux fêtes tombent le même jour.
 
 ```js
 import { joursFeries } from './src/conges.js';
@@ -44,6 +44,7 @@ joursOuvres({ debut: '2025-12-22', fin: '2025-12-26', site: 'alsace-moselle' });
 
 Les erreurs d'appel lèvent une `RangeError` avec un message en français :
 
+- demande absente ou qui n'est pas un objet (`joursOuvres()`, `joursOuvres(null)`) ;
 - date qui n'est pas au format `AAAA-MM-JJ`, ou qui n'existe pas (ex. `2026-02-30`) ;
 - site autre que `national` ou `alsace-moselle` ;
 - année qui n'est pas un entier de 2000 à 2100 (y compris pour une date de demande hors de cette plage) ;
