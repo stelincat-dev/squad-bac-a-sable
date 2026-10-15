@@ -19,6 +19,13 @@ const FERIES_FIXES = Object.freeze([
 ]);
 
 function verifierSite(site) {
+  if (site === undefined) {
+    throw new RangeError('Le site est obligatoire : valeurs acceptées « national » ou « alsace-moselle ».');
+  }
+  // Type contrôlé avant toute conversion : un Symbol ou un objet sans prototype lève une RangeError, pas une TypeError.
+  if (typeof site !== 'string') {
+    throw new RangeError('Le site doit être une chaîne de caractères : valeurs acceptées « national » ou « alsace-moselle ».');
+  }
   if (!SITES.includes(site)) {
     throw new RangeError(`Le site « ${site} » est inconnu : valeurs acceptées « national » ou « alsace-moselle ».`);
   }
@@ -116,4 +123,148 @@ export function joursOuvres(demande) {
     if (jourSemaine !== 0 && jourSemaine !== 6 && !feries.has(formater(t))) n++;
   }
   return { joursOuvres: n };
+}
+
+/** États d'une demande de congé : en attente de décision, acceptée, refusée ou annulée (ces deux derniers sont définitifs). */
+export const ETATS = Object.freeze(['en-attente', 'acceptee', 'refusee', 'annulee']);
+
+/** Actions acceptées par changerEtat. */
+export const ACTIONS = Object.freeze(['accepter', 'refuser', 'annuler']);
+
+const ETATS_ACTIFS = Object.freeze(['en-attente', 'acceptee']);
+
+function verifierPersonne(valeur, nom) {
+  if (typeof valeur !== 'string' || valeur === '') {
+    throw new RangeError(`${nom} doit être un identifiant sous forme de chaîne non vide.`);
+  }
+}
+
+// Contrôle une demande { id, salarie, debut, fin, site, etat } ; l'ordre des dates n'est pas contrôlé ici.
+function verifierDemande(demande) {
+  if (demande === null || typeof demande !== 'object') {
+    throw new RangeError('La demande doit être un objet { id, salarie, debut, fin, site, etat }.');
+  }
+  verifierPersonne(demande.salarie, 'Le salarié de la demande');
+  lireDate(demande.debut, 'début');
+  lireDate(demande.fin, 'fin');
+  verifierSite(demande.site);
+  if (!ETATS.includes(demande.etat)) {
+    throw new RangeError('L\'état de la demande doit être « en-attente », « acceptee », « refusee » ou « annulee ».');
+  }
+}
+
+function verifierDemandes(demandes) {
+  if (!Array.isArray(demandes)) throw new RangeError('La liste des demandes doit être un tableau.');
+  for (const d of demandes) {
+    verifierDemande(d);
+    if (d.fin < d.debut) throw new RangeError('Une demande de la liste a une date de fin avant sa date de début.');
+  }
+}
+
+function verifierJoursAcquis(n) {
+  if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) {
+    throw new RangeError('Les jours acquis doivent être un nombre positif ou nul.');
+  }
+}
+
+// Jours d'une demande : ses jours ouvrés sur son propre site.
+function joursDemande({ debut, fin, site }) {
+  return joursOuvres({ debut, fin, site }).joursOuvres;
+}
+
+// Deux intervalles de dates « AAAA-MM-JJ » déjà validées, bornes comprises, en dates calendaires.
+function seChevauchent(a, b) {
+  return a.debut <= b.fin && b.debut <= a.fin;
+}
+
+// Demandes acceptées ou en attente du salarié, sauf celle qui porte l'identifiant exclu.
+function demandesActives(salarie, demandes, idExclu) {
+  return demandes.filter((d) => d.salarie === salarie && ETATS_ACTIFS.includes(d.etat)
+    && (idExclu === undefined || d.id !== idExclu));
+}
+
+// Nombre suivi de son nom, au singulier en dessous de 2 (« 0 jour », « 1 jour », « 2 jours »).
+function accorder(n, singulier, pluriel) {
+  return `${n} ${n < 2 ? singulier : pluriel}`;
+}
+
+function somme(demandes) {
+  return demandes.reduce((total, d) => total + joursDemande(d), 0);
+}
+
+/** Recevabilité d'une demande au regard des dates, du solde disponible et des chevauchements : rend { recevable: true } ou { recevable: false, motifs }. */
+export function recevabilite({ demande, demandes, joursAcquis } = {}) {
+  verifierDemande(demande);
+  verifierDemandes(demandes);
+  verifierJoursAcquis(joursAcquis);
+  if (demande.fin < demande.debut) {
+    return {
+      recevable: false,
+      motifs: [{ code: 'fin-avant-debut', message: 'La date de fin de votre demande est antérieure à sa date de début.' }],
+    };
+  }
+  const actives = demandesActives(demande.salarie, demandes, demande.id);
+  const motifs = [];
+  const autre = actives.find((d) => seChevauchent(d, demande));
+  if (autre) {
+    motifs.push({
+      code: 'chevauchement',
+      message: `Votre demande chevauche une autre de vos demandes, du ${autre.debut} au ${autre.fin}.`,
+    });
+  }
+  const jours = joursDemande(demande);
+  const disponible = joursAcquis - somme(actives);
+  if (jours > disponible) {
+    motifs.push({
+      code: 'solde-insuffisant',
+      message: `Votre demande compte ${accorder(jours, 'jour ouvré', 'jours ouvrés')}, mais il ne vous reste que ${accorder(Math.max(disponible, 0), 'jour disponible', 'jours disponibles')}.`,
+    });
+  }
+  return motifs.length ? { recevable: false, motifs } : { recevable: true };
+}
+
+/** Solde d'un salarié : jours acquis moins jours acceptés, les jours en attente étant donnés à part ; rend { joursAcquis, joursPris, joursEnAttente, solde }. */
+export function solde({ salarie, demandes, joursAcquis } = {}) {
+  verifierPersonne(salarie, 'Le salarié');
+  verifierDemandes(demandes);
+  verifierJoursAcquis(joursAcquis);
+  const siennes = demandes.filter((d) => d.salarie === salarie);
+  const joursPris = somme(siennes.filter((d) => d.etat === 'acceptee'));
+  const joursEnAttente = somme(siennes.filter((d) => d.etat === 'en-attente'));
+  return { joursAcquis, joursPris, joursEnAttente, solde: joursAcquis - joursPris };
+}
+
+const NOUVEL_ETAT = Object.freeze({ accepter: 'acceptee', refuser: 'refusee', annuler: 'annulee' });
+const LIBELLE_ACTION = Object.freeze({ accepter: 'd\'accepter', refuser: 'de refuser', annuler: 'd\'annuler' });
+const LIBELLE_ETAT = Object.freeze({ 'en-attente': 'en attente', acceptee: 'acceptée', refusee: 'refusée', annulee: 'annulée' });
+
+/** Changement d'état d'une demande (accepter, refuser par le responsable ; annuler par le salarié au plus tard la veille) : rend { ok: true, demande } avec une copie, ou { ok: false, motifs }. */
+export function changerEtat({ demande, action, par, responsable, aujourdhui } = {}) {
+  if (!ACTIONS.includes(action)) {
+    throw new RangeError('L\'action doit être « accepter », « refuser » ou « annuler ».');
+  }
+  verifierDemande(demande);
+  verifierPersonne(par, 'L\'auteur de l\'action');
+  lireDate(aujourdhui, 'du jour');
+  const motifs = [];
+  if (action === 'annuler') {
+    if (par !== demande.salarie) {
+      motifs.push({ code: 'non-autorise', message: `Vous n'avez pas le droit ${LIBELLE_ACTION[action]} cette demande.` });
+    }
+    if (!ETATS_ACTIFS.includes(demande.etat)) {
+      motifs.push({ code: 'transition-interdite', message: `Vous ne pouvez pas annuler cette demande : elle est déjà ${LIBELLE_ETAT[demande.etat]}.` });
+    }
+    if (aujourdhui >= demande.debut) {
+      motifs.push({ code: 'delai-depasse', message: 'Vous ne pouvez plus annuler cette demande : l\'annulation doit intervenir au plus tard la veille du premier jour de congé.' });
+    }
+  } else {
+    verifierPersonne(responsable, 'Le responsable');
+    if (par !== responsable) {
+      motifs.push({ code: 'non-autorise', message: `Vous n'avez pas le droit ${LIBELLE_ACTION[action]} cette demande.` });
+    }
+    if (demande.etat !== 'en-attente') {
+      motifs.push({ code: 'transition-interdite', message: `Vous ne pouvez pas ${action} cette demande : elle est déjà ${LIBELLE_ETAT[demande.etat]}.` });
+    }
+  }
+  return motifs.length ? { ok: false, motifs } : { ok: true, demande: { ...demande, etat: NOUVEL_ETAT[action] } };
 }
