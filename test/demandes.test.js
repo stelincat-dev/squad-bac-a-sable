@@ -299,3 +299,48 @@ test('les erreurs d\'appel des nouvelles fonctions lèvent une RangeError', () =
   assert.throws(() => changerEtat({ demande: EN_ATTENTE, action: 'accepter', par: 'R1', aujourdhui: '2026-03-01' }), RangeError);
   assert.throws(() => changerEtat(), RangeError);
 });
+
+test('le motif non-autorise de changerEtat a un libellé par action', () => {
+  const attendus = {
+    accepter: 'Vous n\'avez pas le droit d\'accepter cette demande.',
+    refuser: 'Vous n\'avez pas le droit de refuser cette demande.',
+    annuler: 'Vous n\'avez pas le droit d\'annuler cette demande.',
+  };
+  for (const [action, message] of Object.entries(attendus)) {
+    const resultat = changerEtat({ demande: EN_ATTENTE, action, par: 'X', responsable: 'R1', aujourdhui: '2026-03-01' });
+    assert.equal(resultat.motifs.find((m) => m.code === 'non-autorise').message, message, action);
+  }
+});
+
+test('le message solde-insuffisant accorde « jour » au singulier en dessous de 2 et au pluriel au-delà', () => {
+  const message = (nouvelle, joursAcquis) => recevabilite({ demande: nouvelle, demandes: [], joursAcquis })
+    .motifs.find((m) => m.code === 'solde-insuffisant').message;
+  const unJour = demande('n5', 'S1', '2026-06-01', '2026-06-01', 'en-attente');
+  const deuxJours = demande('n6', 'S1', '2026-06-01', '2026-06-02', 'en-attente');
+  assert.equal(message(unJour, 0), 'Votre demande compte 1 jour ouvré, mais il ne vous reste que 0 jour disponible.');
+  assert.equal(message(deuxJours, 1), 'Votre demande compte 2 jours ouvrés, mais il ne vous reste que 1 jour disponible.');
+  assert.equal(message(TREIZE_JOURS, 2), 'Votre demande compte 13 jours ouvrés, mais il ne vous reste que 2 jours disponibles.');
+});
+
+test('une demande de la liste dont la fin est avant le début est une erreur d\'appel, quel que soit son état ou son salarié', () => {
+  for (const etat of ['en-attente', 'acceptee', 'refusee', 'annulee']) {
+    for (const salarie of ['S1', 'S2']) {
+      const inversee = demande('z', salarie, '2025-12-26', '2025-12-22', etat);
+      assert.throws(() => recevabilite({ demande: DOUZE_JOURS, demandes: [inversee], joursAcquis: 25 }),
+        (e) => e instanceof RangeError && /fin avant sa date de début/.test(e.message), `${etat}, ${salarie}`);
+      assert.throws(() => solde({ salarie: 'S1', demandes: [inversee], joursAcquis: 25 }), RangeError, `${etat}, ${salarie}`);
+    }
+  }
+});
+
+test('une demande contrôlée sans id n\'ignore aucune demande de la liste, même sans id', () => {
+  const { id, ...sansId } = TREIZE_JOURS;
+  const autreSansId = { ...sansId, etat: 'acceptee' };
+  assert.deepEqual(codes(recevabilite({ demande: sansId, demandes: [autreSansId], joursAcquis: 26 })), ['chevauchement']);
+});
+
+test('le README précise que la demande de même id n\'est ignorée que si la demande contrôlée a un id', () => {
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  assert.match(readme, /seulement si `demande` a un `id`/);
+  assert.match(readme, /Une demande de la liste dont la date de fin est avant la date de début est une erreur d'appel/);
+});

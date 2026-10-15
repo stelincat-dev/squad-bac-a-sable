@@ -55,13 +55,13 @@ Les trois fonctions suivantes ne modifient jamais les objets reçus et ne lisent
 ### `recevabilite({ demande, demandes, joursAcquis })`
 
 - `demande` : la demande à contrôler.
-- `demandes` : tableau des demandes connues (tous salariés et tous états confondus).
+- `demandes` : tableau des demandes connues (tous salariés et tous états confondus). Une demande de la liste dont la date de fin est avant la date de début est une erreur d'appel (`RangeError`), quel que soit son état ou son salarié.
 - `joursAcquis` : nombre de jours acquis par le salarié, nombre positif ou nul.
 - Rend `{ recevable: true }` (sans clé `motifs`) ou `{ recevable: false, motifs }`, avec les codes :
   - `fin-avant-debut` : la date de fin est avant la date de début. Ce motif est alors le seul rendu ;
   - `solde-insuffisant` : les jours de la demande dépassent le solde disponible, c'est-à-dire les jours acquis moins les jours des demandes `acceptee` et `en-attente` du même salarié. Une demande égale au solde disponible est recevable ;
   - `chevauchement` : la demande partage au moins une date calendaire avec une demande `acceptee` ou `en-attente` du même salarié.
-- Les demandes `refusee` ou `annulee`, celles des autres salariés et celle de la liste qui porte le même `id` que `demande` ne comptent ni pour le solde ni pour le chevauchement.
+- Les demandes `refusee` ou `annulee`, celles des autres salariés et, seulement si `demande` a un `id`, celle de la liste qui porte le même `id` ne comptent ni pour le solde ni pour le chevauchement. Une demande contrôlée sans `id` n'en ignore aucune.
 
 ### `solde({ salarie, demandes, joursAcquis })`
 
@@ -98,7 +98,8 @@ Les erreurs d'appel lèvent une `RangeError` avec un message en français :
 - date qui n'est pas au format `AAAA-MM-JJ`, ou qui n'existe pas (ex. `2026-02-30`) ;
 - site autre que `national` ou `alsace-moselle` ;
 - année qui n'est pas un entier de 2000 à 2100 (y compris pour une date de demande hors de cette plage) ;
-- date de fin avant la date de début, pour `joursOuvres` (pour `recevabilite`, c'est un motif `fin-avant-debut`) ;
+- date de fin avant la date de début, pour `joursOuvres` (pour la demande contrôlée par `recevabilite`, c'est un motif `fin-avant-debut`) ;
+- demande de la liste `demandes` (pour `recevabilite` et `solde`) dont la date de fin est avant la date de début, quel que soit son état ou son salarié ;
 - site absent (« Le site est obligatoire… ») ou qui n'est pas une chaîne de caractères ;
 - pour les demandes : objet absent, salarié qui n'est pas une chaîne non vide, état inconnu, liste `demandes` qui n'est pas un tableau ;
 - `joursAcquis` qui n'est pas un nombre fini positif ou nul ;

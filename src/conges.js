@@ -155,7 +155,10 @@ function verifierDemande(demande) {
 
 function verifierDemandes(demandes) {
   if (!Array.isArray(demandes)) throw new RangeError('La liste des demandes doit être un tableau.');
-  for (const d of demandes) verifierDemande(d);
+  for (const d of demandes) {
+    verifierDemande(d);
+    if (d.fin < d.debut) throw new RangeError('Une demande de la liste a une date de fin avant sa date de début.');
+  }
 }
 
 function verifierJoursAcquis(n) {
@@ -178,6 +181,11 @@ function seChevauchent(a, b) {
 function demandesActives(salarie, demandes, idExclu) {
   return demandes.filter((d) => d.salarie === salarie && ETATS_ACTIFS.includes(d.etat)
     && (idExclu === undefined || d.id !== idExclu));
+}
+
+// Nombre suivi de son nom, au singulier en dessous de 2 (« 0 jour », « 1 jour », « 2 jours »).
+function accorder(n, singulier, pluriel) {
+  return `${n} ${n < 2 ? singulier : pluriel}`;
 }
 
 function somme(demandes) {
@@ -209,7 +217,7 @@ export function recevabilite({ demande, demandes, joursAcquis } = {}) {
   if (jours > disponible) {
     motifs.push({
       code: 'solde-insuffisant',
-      message: `Votre demande compte ${jours} jours ouvrés, mais il ne vous reste que ${Math.max(disponible, 0)} jours disponibles.`,
+      message: `Votre demande compte ${accorder(jours, 'jour ouvré', 'jours ouvrés')}, mais il ne vous reste que ${accorder(Math.max(disponible, 0), 'jour disponible', 'jours disponibles')}.`,
     });
   }
   return motifs.length ? { recevable: false, motifs } : { recevable: true };
@@ -227,6 +235,7 @@ export function solde({ salarie, demandes, joursAcquis } = {}) {
 }
 
 const NOUVEL_ETAT = Object.freeze({ accepter: 'acceptee', refuser: 'refusee', annuler: 'annulee' });
+const LIBELLE_ACTION = Object.freeze({ accepter: 'd\'accepter', refuser: 'de refuser', annuler: 'd\'annuler' });
 const LIBELLE_ETAT = Object.freeze({ 'en-attente': 'en attente', acceptee: 'acceptée', refusee: 'refusée', annulee: 'annulée' });
 
 /** Changement d'état d'une demande (accepter, refuser par le responsable ; annuler par le salarié au plus tard la veille) : rend { ok: true, demande } avec une copie, ou { ok: false, motifs }. */
@@ -240,7 +249,7 @@ export function changerEtat({ demande, action, par, responsable, aujourdhui } = 
   const motifs = [];
   if (action === 'annuler') {
     if (par !== demande.salarie) {
-      motifs.push({ code: 'non-autorise', message: 'Vous n\'avez pas le droit d\'annuler cette demande : seul le salarié qui l\'a déposée le peut.' });
+      motifs.push({ code: 'non-autorise', message: `Vous n'avez pas le droit ${LIBELLE_ACTION[action]} cette demande.` });
     }
     if (!ETATS_ACTIFS.includes(demande.etat)) {
       motifs.push({ code: 'transition-interdite', message: `Vous ne pouvez pas annuler cette demande : elle est déjà ${LIBELLE_ETAT[demande.etat]}.` });
@@ -251,7 +260,7 @@ export function changerEtat({ demande, action, par, responsable, aujourdhui } = 
   } else {
     verifierPersonne(responsable, 'Le responsable');
     if (par !== responsable) {
-      motifs.push({ code: 'non-autorise', message: `Vous n'avez pas le droit de ${action} cette demande : seul le responsable du salarié le peut.` });
+      motifs.push({ code: 'non-autorise', message: `Vous n'avez pas le droit ${LIBELLE_ACTION[action]} cette demande.` });
     }
     if (demande.etat !== 'en-attente') {
       motifs.push({ code: 'transition-interdite', message: `Vous ne pouvez pas ${action} cette demande : elle est déjà ${LIBELLE_ETAT[demande.etat]}.` });
