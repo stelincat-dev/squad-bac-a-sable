@@ -185,6 +185,17 @@ test('critères 12 et 14 : remboursementsNote refuse un hôtel de 1e20 ou 32 nui
   assert.equal(remboursementsNote(noteMain(hotel(31)))[0].montantRemboursableCentimes, 31 * 12000);
 });
 
+test('revue : un hôtel construit à la main avec nuits null compte une nuit, comme dans ajouterDepense, et ne vaut jamais 0', () => {
+  const hotel = { date: '2026-11-10', nature: 'hotel', montantTtcCentimes: 40000, nuits: null };
+  const hotelParis = { ...hotel, date: '2026-11-11', aParis: true };
+  assert.equal(montantRemboursable(hotel), 12000);
+  assert.equal(montantRemboursable(hotelParis), 15000);
+  const lignes = remboursementsNote(noteMain(hotel, hotelParis));
+  assert.deepEqual(lignes.map((l) => l.montantRemboursableCentimes), [12000, 15000]);
+  assert.equal(lignes[0].nuits, null, 'la ligne rendue garde la dépense reçue');
+  assert.equal(ajouterDepense(creerNote({ salarie: 'S1', mois: '2026-11' }), hotel).depenses[0].nuits, 1);
+});
+
 // Arrondi demi supérieur de a ÷ b en BigInt (a ≥ 0, b > 0), la règle de Math.round sur des positifs.
 const arrondiBigInt = (a, b) => (2n * a + b) / (2n * b);
 

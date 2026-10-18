@@ -135,7 +135,7 @@ Rend une nouvelle note, avec la dépense contrôlée ajoutée à la fin de `depe
 - `date` : dans le mois de la note ; `nature` : une des sept natures ;
 - `montantTtcCentimes` : entier strictement positif, 1 000 000 centimes au plus, pour toutes les natures sauf `indemnites-kilometriques`, où il est interdit (le montant est calculé) ;
 - `tauxTva` (facultatif ; pour `peage`, 20 ou absent), `aParis` (booléen, `false` par défaut ; refusé pour `peage` et `parking`, et absent de leur copie), `justificatif` (référence, chaîne non vide, facultative) ;
-- `nuits` : pour `hotel` seulement, entier de 1 à 31, `1` par défaut ;
+- `nuits` : pour `hotel` seulement, entier de 1 à 31, `1` par défaut (absent ou `null`, y compris au calcul sur une note relue) ;
 - `kilometres` (entier de 1 à 2 000) et `puissance` (chevaux fiscaux, entier ≥ 3) : pour `indemnites-kilometriques` seulement, datées de 2025 ou 2026.
 
 Doublons refusés : même date, même nature et même montant ; pour les indemnités kilométriques, même date et mêmes kilomètres.

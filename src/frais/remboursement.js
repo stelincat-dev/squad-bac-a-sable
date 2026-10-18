@@ -14,12 +14,12 @@ export const PLAFONDS = Object.freeze({
 /** Montant remboursable, en centimes, d'une dépense autre qu'une indemnité kilométrique, revérifiée hors date : plafonné pour le repas et l'hôtel (par nuit). */
 export function montantRemboursable(depense) {
   if (depense === null || typeof depense !== 'object') throw new RangeError('La dépense doit être un objet.');
-  const { nature, montantTtcCentimes, aParis = false, nuits = 1 } = depense;
-  verifierNature(nature);
-  if (nature === 'indemnites-kilometriques') {
+  verifierNature(depense.nature);
+  if (depense.nature === 'indemnites-kilometriques') {
     throw new RangeError('Une indemnité kilométrique se calcule avec le barème, sur l\'ensemble de la note : utilisez remboursementsNote.');
   }
-  verifierChampsDepense(depense);
+  // Le calcul lit la copie contrôlée, jamais la dépense reçue : nuits absentes ou null valent 1 nuit, comme dans ajouterDepense.
+  const { nature, montantTtcCentimes, aParis, nuits } = verifierChampsDepense(depense);
   if (nature === 'repas') return Math.min(montantTtcCentimes, PLAFONDS.repas[aParis ? 'paris' : 'horsParis']);
   if (nature === 'hotel') return Math.min(montantTtcCentimes, PLAFONDS.hotel[aParis ? 'paris' : 'horsParis'] * nuits);
   return montantTtcCentimes;
@@ -30,8 +30,8 @@ export function remboursementsNote(note, { kilometrageDejaRembourse } = {}) {
   verifierNote(note);
   const controlees = note.depenses.map((d) => normaliserDepense(d, note.mois));
   controlees.forEach((d, index) => refuserDoublon(controlees.slice(0, index), d));
-  const montants = note.depenses.map((d) => (d.nature === 'indemnites-kilometriques' ? undefined : montantRemboursable(d)));
-  const indemnites = note.depenses
+  const montants = controlees.map((d) => (d.nature === 'indemnites-kilometriques' ? undefined : montantRemboursable(d)));
+  const indemnites = controlees
     .map((depense, index) => ({ depense, index }))
     .filter(({ depense }) => depense.nature === 'indemnites-kilometriques')
     .sort((a, b) => (a.depense.date < b.depense.date ? -1 : a.depense.date > b.depense.date ? 1 : a.index - b.index));
