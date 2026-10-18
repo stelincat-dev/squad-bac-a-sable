@@ -35,7 +35,9 @@ function codes(resultat) {
   return resultat.motifs.map((m) => m.code).sort();
 }
 
-const avec = (etat, total = 20000, plus = {}) => ({ ...NOTE, etat, dateSoumission: '2026-11-30', historique: [], ...plus, _total: total });
+const avec = (etat, total = 20000, plus = {}) => ({
+  ...NOTE, etat, dateSoumission: '2026-11-30', historique: [], totalRemboursableCentimes: total, ...plus, _total: total,
+});
 const appel = (note, action, acteur, autres = {}) => {
   const { _total, ...propre } = note;
   return agir(propre, action, acteur, { totalRemboursableCentimes: _total ?? 20000, ...autres });
@@ -291,7 +293,9 @@ test('réponse 7 : la date de paiement ne peut être ni après le jour même ni 
 });
 
 test('la note reçue, figée en profondeur, reste intacte et le résultat en est une copie', () => {
-  const note = figer(structuredClone({ ...NOTE, etat: 'soumise', historique: [{ action: 'soumettre', par: 'S1' }] }));
+  const note = figer(structuredClone({
+    ...NOTE, etat: 'soumise', totalRemboursableCentimes: 20000, historique: [{ action: 'soumettre', par: 'S1' }],
+  }));
   const r = agir(note, 'refuser', MANAGER, { motif: 'Non' });
   assert.notEqual(r.note, note);
   assert.notEqual(r.note.historique, note.historique);
@@ -319,6 +323,7 @@ test('chaque motif de refus a un code et un message en français au vouvoiement'
     appel(avec('payee'), 'refuser', MANAGER, {}),
     appel({ ...avec('soumise'), salarie: 'M1' }, 'valider', MANAGER),
     appel(avec('controlee'), 'payer', COMPTA, { datePaiement: '2027-01-01' }),
+    appel(avec('soumise'), 'valider', MANAGER, { totalRemboursableCentimes: 20001 }),
   ];
   for (const r of resultats) {
     for (const { code, message } of r.motifs) {
@@ -342,6 +347,14 @@ test('les erreurs d\'appel lèvent une RangeError avec un message en français',
     { ...base, managerAuteur: '' },
     { ...base, totalRemboursableCentimes: 1500.5 },
     { ...base, totalRemboursableCentimes: undefined },
+    { ...base, totalRemboursableCentimes: 0 },
+    { ...base, totalRemboursableCentimes: -100 },
+    { ...base, totalRemboursableCentimes: Number.MAX_SAFE_INTEGER + 1 },
+    { ...base, note: { ...NOTE, depenses: [{ nature: 'repas', montantTtcCentimes: 0 }] } },
+    { ...base, note: { ...NOTE, depenses: [{ nature: 'repas', montantTtcCentimes: -6000 }] } },
+    { ...base, note: { ...NOTE, depenses: [{ nature: 'repas', montantTtcCentimes: 2 ** 53 }] } },
+    { ...base, note: { ...NOTE, etat: 'soumise' }, action: 'valider', acteur: MANAGER },
+    { ...base, note: avec('soumise', 0), action: 'valider', acteur: MANAGER, totalRemboursableCentimes: 20000 },
     { ...base, aujourdhui: '2026-02-30' },
     { ...base, aujourdhui: '01/12/2026' },
     { ...base, note: avec('controlee'), action: 'payer', acteur: COMPTA },
@@ -351,4 +364,36 @@ test('les erreurs d\'appel lèvent une RangeError avec un message en français',
     assert.throws(() => transitionNote(appelErrone), RangeError, JSON.stringify(appelErrone));
   }
   assert.throws(() => transitionNote(), { name: 'RangeError', message: /L'action doit être/ });
+});
+
+test('la soumission enregistre le total remboursable sur la note, et un refus l\'efface pour la correction', () => {
+  const soumise = agir(NOTE, 'soumettre', AUTEUR, { totalRemboursableCentimes: 150001 }).note;
+  assert.equal(soumise.totalRemboursableCentimes, 150001);
+  const refusee = agir(soumise, 'refuser', MANAGER, { motif: 'Erreur de montant', totalRemboursableCentimes: 150001 }).note;
+  assert.equal(refusee.etat, 'brouillon');
+  assert.equal('totalRemboursableCentimes' in refusee, false);
+  const resoumise = agir(refusee, 'soumettre', AUTEUR, { totalRemboursableCentimes: 150000 }).note;
+  assert.equal(resoumise.totalRemboursableCentimes, 150000);
+  assert.equal(agir(resoumise, 'valider', MANAGER, { totalRemboursableCentimes: 150000 }).note.etat, 'validee-manager');
+});
+
+test('hors brouillon, un total différent de celui enregistré à la soumission est refusé et ne fait pas échapper la note au directeur financier', () => {
+  const validee = figer(parcours(NOTE, [['soumettre', AUTEUR], ['valider', MANAGER]], { totalRemboursableCentimes: 150001 }));
+  const r = agir(validee, 'controler', COMPTA, { totalRemboursableCentimes: 150000 });
+  assert.deepEqual(codes(r), ['total-modifie']);
+  assert.match(r.motifs[0].message, /150000 centimes.*150001 centimes/);
+  assert.equal(validee.etat, 'validee-manager');
+  assert.deepEqual(codes(agir(validee, 'refuser', COMPTA, { motif: 'Non', totalRemboursableCentimes: 150000 })), ['total-modifie']);
+  assert.equal(agir(validee, 'valider', DF, { totalRemboursableCentimes: 150001 }).note.etat, 'validee-df');
+
+  const petite = figer(parcours(NOTE, [['soumettre', AUTEUR], ['valider', MANAGER]], { totalRemboursableCentimes: 150000 }));
+  assert.deepEqual(codes(agir(petite, 'valider', DF, { totalRemboursableCentimes: 150001 })), ['total-modifie']);
+  assert.deepEqual(codes(agir(petite, 'valider', MANAGER, { totalRemboursableCentimes: 150000 })), ['transition-interdite']);
+  assert.equal(agir(petite, 'controler', COMPTA, { totalRemboursableCentimes: 150000 }).note.etat, 'controlee');
+});
+
+test('une dépense ajoutée à une note soumise, avec un total recalculé, ne peut plus avancer dans le circuit', () => {
+  const soumise = agir(NOTE, 'soumettre', AUTEUR).note;
+  const modifiee = ajouterDepense(soumise, { date: '2026-11-12', nature: 'repas', montantTtcCentimes: 1500 });
+  assert.deepEqual(codes(agir(modifiee, 'valider', MANAGER, { totalRemboursableCentimes: 21500 })), ['total-modifie']);
 });

@@ -45,6 +45,9 @@ const LIBELLE_ACTION = Object.freeze({
   payer: 'd\'enregistrer le paiement de',
 });
 
+// Montant sûr : entier de centimes représentable exactement et strictement positif.
+const estCentimesPositifs = (montant) => Number.isSafeInteger(montant) && montant > 0;
+
 function verifierNoteCircuit(note) {
   if (note === null || typeof note !== 'object' || !Array.isArray(note.depenses)) {
     throw new RangeError('La note doit être un objet { salarie, depenses, etat, historique }.');
@@ -57,10 +60,13 @@ function verifierNoteCircuit(note) {
     throw new RangeError('L\'historique de la note doit être un tableau.');
   }
   if (note.dateSoumission !== undefined) lireDate(note.dateSoumission, 'soumission');
+  if ((note.etat ?? 'brouillon') !== 'brouillon' && !estCentimesPositifs(note.totalRemboursableCentimes)) {
+    throw new RangeError('Une note sortie du brouillon doit porter le total remboursable enregistré à sa soumission, en centimes entiers strictement positifs.');
+  }
   for (const depense of note.depenses) {
     if (depense === null || typeof depense !== 'object') throw new RangeError('Chaque dépense de la note doit être un objet.');
-    if (depense.nature !== IK && !Number.isInteger(depense.montantTtcCentimes)) {
-      throw new RangeError('Le montant TTC de chaque dépense doit être un nombre entier de centimes.');
+    if (depense.nature !== IK && !estCentimesPositifs(depense.montantTtcCentimes)) {
+      throw new RangeError('Le montant TTC de chaque dépense doit être un nombre entier de centimes strictement positif.');
     }
   }
 }
@@ -122,8 +128,8 @@ export function transitionNote({
   if (managerAuteur !== undefined && managerAuteur !== null && (typeof managerAuteur !== 'string' || managerAuteur === '')) {
     throw new RangeError('Le manager de l\'auteur doit être un identifiant sous forme de chaîne non vide, ou être absent.');
   }
-  if (!Number.isInteger(totalRemboursableCentimes) || totalRemboursableCentimes < 0) {
-    throw new RangeError('Le total remboursable doit être un nombre entier de centimes positif ou nul.');
+  if (!estCentimesPositifs(totalRemboursableCentimes)) {
+    throw new RangeError('Le total remboursable doit être un nombre entier de centimes strictement positif.');
   }
   lireDate(aujourdhui, 'du jour');
   if (action === 'payer') {
@@ -132,11 +138,18 @@ export function transitionNote({
   }
 
   const etat = note.etat ?? 'brouillon';
-  const attendu = roleAttendu(action, etat, totalRemboursableCentimes);
+  // Hors brouillon, le seuil se juge sur le total enregistré à la soumission, jamais sur celui de l'appel.
+  const total = etat === 'brouillon' ? totalRemboursableCentimes : note.totalRemboursableCentimes;
+  const attendu = roleAttendu(action, etat, total);
   const motifs = [];
   const nonAutorise = () => motifs.push({ code: 'non-autorise', message: `Vous n'avez pas le droit ${LIBELLE_ACTION[action]} cette note.` });
 
-  if (attendu === null) {
+  if (totalRemboursableCentimes !== total) {
+    motifs.push({
+      code: 'total-modifie',
+      message: `Vous ne pouvez pas faire cette action : le total remboursable transmis (${totalRemboursableCentimes} centimes) diffère de celui enregistré à la soumission (${total} centimes). Pour le changer, la note doit être refusée puis soumise de nouveau.`,
+    });
+  } else if (attendu === null) {
     motifs.push({ code: 'transition-interdite', message: `Vous ne pouvez pas faire cette action : la note est ${LIBELLE_ETAT[etat]}.` });
     if (!ROLES_PAR_ACTION[action].includes(acteur.role)) nonAutorise();
   } else if (acteur.role !== attendu) {
@@ -179,7 +192,11 @@ export function transitionNote({
     etat: vers,
     historique: [...(note.historique ?? []).map((e) => ({ ...e })), entree],
   };
-  if (action === 'soumettre') nouvelle.dateSoumission = aujourdhui;
+  if (action === 'soumettre') {
+    nouvelle.dateSoumission = aujourdhui;
+    nouvelle.totalRemboursableCentimes = totalRemboursableCentimes;
+  }
+  if (action === 'refuser') delete nouvelle.totalRemboursableCentimes;
   if (action === 'payer') nouvelle.datePaiement = datePaiement;
   return { ok: true, note: nouvelle };
 }

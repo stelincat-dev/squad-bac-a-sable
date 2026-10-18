@@ -162,11 +162,11 @@ Fait avancer une note dans le circuit : `brouillon` → `soumise` → `validee-m
 
 `transitionNote({ note, action, acteur, managerAuteur, totalRemboursableCentimes, motif, datePaiement, aujourdhui })`
 
-- `note` : `{ salarie, depenses, etat?, historique?, dateSoumission?, datePaiement? }` ; `salarie` est l'auteur.
+- `note` : `{ salarie, depenses, etat?, historique?, dateSoumission?, totalRemboursableCentimes?, datePaiement? }` ; `salarie` est l'auteur. Hors brouillon, `totalRemboursableCentimes` (enregistré par `soumettre`) est obligatoire.
 - `action` (`ACTIONS_NOTE`) : `soumettre`, `valider`, `refuser`, `controler`, `payer`.
 - `acteur` : `{ id, role }`, rôle parmi `ROLES` : `salarie`, `manager`, `directeur-financier`, `comptabilite`.
 - `managerAuteur` : identifiant du manager rattaché à l'auteur, ou absent.
-- `totalRemboursableCentimes` : total remboursable TTC de la note, entier de centimes positif ou nul (seuil `SEUIL_DF_CENTIMES` = 150000).
+- `totalRemboursableCentimes` : total remboursable TTC de la note, entier de centimes strictement positif (seuil `SEUIL_DF_CENTIMES` = 150000). `soumettre` l'enregistre sur la note ; aux étapes suivantes, le seuil se juge sur ce total enregistré, et un appel qui transmet un autre total est refusé (`total-modifie`). Un refus efface le total enregistré : la nouvelle soumission enregistre le total corrigé.
 - `motif` : texte du refus ; `datePaiement` : date `AAAA-MM-JJ`, obligatoire pour `payer` ; `aujourdhui` : date du jour `AAAA-MM-JJ`.
 
 Qui fait quoi, et à quelle étape :
@@ -184,7 +184,7 @@ Qui fait quoi, et à quelle étape :
 
 Une note `payee` est définitive. Après un refus, une nouvelle soumission repart de la validation du manager.
 
-Rend `{ ok: true, note }`, avec une copie de la note dans son nouvel état et une entrée `{ action, par, role, de, vers, date }` ajoutée à la fin de `historique` (plus `motif` pour un refus). `soumettre` enregistre `dateSoumission`, `payer` enregistre `datePaiement`. Sinon rend `{ ok: false, motifs }`, sans exception, avec les codes :
+Rend `{ ok: true, note }`, avec une copie de la note dans son nouvel état et une entrée `{ action, par, role, de, vers, date }` ajoutée à la fin de `historique` (plus `motif` pour un refus). `soumettre` enregistre `dateSoumission` et `totalRemboursableCentimes`, `payer` enregistre `datePaiement`. Sinon rend `{ ok: false, motifs }`, sans exception, avec les codes :
 
 - `transition-interdite` : l'action n'est pas possible à l'état de la note (étape sautée, mauvaise branche du seuil, note payée) ;
 - `non-autorise` : l'acteur n'a pas le rôle prévu à cette étape, n'est pas l'auteur (soumission) ou n'est pas le manager rattaché ;
@@ -192,8 +192,11 @@ Rend `{ ok: true, note }`, avec une copie de la note dans son nouvel état et un
 - `manager-absent` : soumission sans manager rattaché ;
 - `justificatif-manquant` : à la soumission, une dépense de 50 € ou plus (`SEUIL_JUSTIFICATIF_CENTIMES`), hors indemnités kilométriques, n'a pas de référence de justificatif ;
 - `motif-obligatoire` : refus sans motif, ou avec un motif vide ou fait d'espaces ;
-- `date-paiement-invalide` : date de paiement après `aujourdhui` ou avant `dateSoumission`.
+- `date-paiement-invalide` : date de paiement après `aujourdhui` ou avant `dateSoumission` ;
+- `total-modifie` : hors brouillon, le total transmis diffère de celui enregistré à la soumission.
 
 `justificatifsManquants(depenses)` rend les rangs (à partir de 1) des dépenses sans justificatif obligatoire.
 
-Les erreurs d'appel lèvent une `RangeError` : action ou rôle inconnus, note absente ou mal formée (état inconnu, historique qui n'est pas un tableau, montant qui n'est pas un entier de centimes), acteur sans identifiant, `managerAuteur` vide, total remboursable qui n'est pas un entier positif ou nul, date du jour ou date de paiement invalide ou absente.
+Les erreurs d'appel lèvent une `RangeError` : action ou rôle inconnus, note absente ou mal formée (état inconnu, historique qui n'est pas un tableau, montant de dépense qui n'est pas un entier sûr de centimes strictement positif, note hors brouillon sans total enregistré valide), acteur sans identifiant, `managerAuteur` vide, total remboursable qui n'est pas un entier sûr de centimes strictement positif, date du jour ou date de paiement invalide ou absente.
+
+Les dépenses ne se modifient qu'en brouillon (réponse 4 du client) : n'appelez `ajouterDepense` que sur une note en `brouillon`. `ajouterDepense` ne regarde pas l'état de la note ; une note sortie du brouillon dont le total recalculé change est bloquée par `total-modifie` et doit être refusée pour être corrigée.
