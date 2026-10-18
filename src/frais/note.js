@@ -17,7 +17,10 @@ export function creerNote({ salarie, mois } = {}) {
   return { salarie, mois, depenses: [] };
 }
 
-function verifierNote(note) {
+// Les fonctions exportées ci-dessous servent aussi à remboursement.js ; elles ne sont pas exposées par index.js.
+
+/** Vérifie la forme d'une note { salarie, mois, depenses } : salarié, mois et tableau de dépenses ; lève une RangeError sinon. */
+export function verifierNote(note) {
   if (note === null || typeof note !== 'object' || !Array.isArray(note.depenses)) {
     throw new RangeError('La note doit être un objet { salarie, mois, depenses }, créé par creerNote.');
   }
@@ -31,17 +34,17 @@ function refuserChamp(depense, champ, nature) {
   }
 }
 
-// Contrôle la dépense et rend une copie qui ne garde que les champs utiles à sa nature.
-function normaliserDepense(depense, mois) {
+function verifierObjetDepense(depense) {
   if (depense === null || typeof depense !== 'object') {
     throw new RangeError('La dépense doit être un objet { date, nature, montantTtcCentimes, … }.');
   }
-  const { date, nature, montantTtcCentimes, tauxTva, aParis = false, justificatif, nuits, kilometres, puissance } = depense;
+}
+
+/** Contrôle les champs d'une dépense, hors date, et rend une copie sans date qui ne garde que les champs utiles à sa nature. */
+export function verifierChampsDepense(depense) {
+  verifierObjetDepense(depense);
+  const { nature, montantTtcCentimes, tauxTva, aParis = false, justificatif, nuits, kilometres, puissance } = depense;
   verifierNature(nature);
-  const { annee } = lireDate(date, 'la dépense');
-  if (date.slice(0, 7) !== mois) {
-    throw new RangeError(`La dépense du ${date} est hors du mois de la note (${mois}) : elle est refusée.`);
-  }
   if (tauxTva !== undefined && !TAUX_TVA.includes(tauxTva)) {
     throw new RangeError('Le taux de TVA doit être 5,5, 10 ou 20 (en pourcentage), ou être absent.');
   }
@@ -51,7 +54,7 @@ function normaliserDepense(depense, mois) {
   if (justificatif !== undefined && (typeof justificatif !== 'string' || justificatif === '')) {
     throw new RangeError('La référence de justificatif doit être une chaîne non vide, ou être absente.');
   }
-  const copie = SANS_LIEU.includes(nature) ? { date, nature } : { date, nature, aParis };
+  const copie = SANS_LIEU.includes(nature) ? { nature } : { nature, aParis };
   if (tauxTva !== undefined) copie.tauxTva = tauxTva;
   if (justificatif !== undefined) copie.justificatif = justificatif;
   if (nature === IK) {
@@ -61,7 +64,6 @@ function normaliserDepense(depense, mois) {
     refuserChamp(depense, 'nuits', nature);
     verifierKilometres(kilometres);
     verifierPuissance(puissance);
-    verifierAnneeBareme(annee);
     return { ...copie, kilometres, puissance };
   }
   refuserChamp(depense, 'kilometres', nature);
@@ -77,18 +79,37 @@ function normaliserDepense(depense, mois) {
   return copie;
 }
 
+/** Contrôle une dépense, date dans le mois de la note comprise, et rend une copie qui ne garde que les champs utiles à sa nature. */
+export function normaliserDepense(depense, mois) {
+  verifierObjetDepense(depense);
+  const { date, nature } = depense;
+  verifierNature(nature);
+  const { annee } = lireDate(date, 'la dépense');
+  if (date.slice(0, 7) !== mois) {
+    throw new RangeError(`La dépense du ${date} est hors du mois de la note (${mois}) : elle est refusée.`);
+  }
+  const champs = verifierChampsDepense(depense);
+  if (nature === IK) verifierAnneeBareme(annee);
+  return { date, ...champs };
+}
+
 function estDoublon(a, b) {
   if (a.date !== b.date || a.nature !== b.nature) return false;
   return a.nature === IK ? a.kilometres === b.kilometres : a.montantTtcCentimes === b.montantTtcCentimes;
+}
+
+/** Refuse par une RangeError une dépense normalisée qui double une des dépenses déjà présentes (même date, nature et montant, ou mêmes km). */
+export function refuserDoublon(depenses, nouvelle) {
+  if (depenses.some((existante) => estDoublon(existante, nouvelle))) {
+    const quoi = nouvelle.nature === IK ? `${nouvelle.kilometres} km` : `${nouvelle.montantTtcCentimes} centimes`;
+    throw new RangeError(`Doublon refusé : la note contient déjà une dépense « ${nouvelle.nature} » du ${nouvelle.date} pour ${quoi}.`);
+  }
 }
 
 /** Ajoute une dépense contrôlée à la note et rend une nouvelle note ; refuse nature inconnue, date hors du mois et doublon. */
 export function ajouterDepense(note, depense) {
   verifierNote(note);
   const nouvelle = normaliserDepense(depense, note.mois);
-  if (note.depenses.some((existante) => estDoublon(existante, nouvelle))) {
-    const quoi = nouvelle.nature === IK ? `${nouvelle.kilometres} km` : `${nouvelle.montantTtcCentimes} centimes`;
-    throw new RangeError(`Doublon refusé : la note contient déjà une dépense « ${nouvelle.nature} » du ${nouvelle.date} pour ${quoi}.`);
-  }
+  refuserDoublon(note.depenses, nouvelle);
   return { ...note, depenses: [...note.depenses, nouvelle] };
 }
