@@ -53,23 +53,54 @@ export function verifierNature(nature) {
   }
 }
 
-/** Vérifie un montant TTC : un nombre entier de centimes strictement positif. */
+/** Montant TTC maximal d'une dépense, en centimes : 10 000,00 € (réponse 1 du client). */
+export const MONTANT_MAX_CENTIMES = 1000000;
+
+/** Kilomètres maximaux d'une indemnité kilométrique, pour un trajet : 2 000 km (réponse 2 du client). */
+export const KILOMETRES_MAX_TRAJET = 2000;
+
+/** Kilométrage annuel maximal, déjà remboursé ou cumulé après un trajet : 100 000 km (réponse 3 du client). */
+export const KILOMETRAGE_ANNUEL_MAX = 100000;
+
+/** Nombre maximal de nuits d'une dépense d'hôtel : 31 (réponse 4 du client). */
+export const NUITS_MAX = 31;
+
+/** Vérifie un montant TTC : un nombre entier de centimes strictement positif, de 10 000,00 € au plus. */
 export function verifierMontant(montantTtcCentimes) {
-  if (!Number.isInteger(montantTtcCentimes) || montantTtcCentimes <= 0) {
+  if (!Number.isSafeInteger(montantTtcCentimes) || montantTtcCentimes <= 0) {
     throw new RangeError('Le montant TTC doit être un nombre entier de centimes strictement positif.');
   }
-}
-
-/** Vérifie un nombre de kilomètres : un entier strictement positif. */
-export function verifierKilometres(kilometres) {
-  if (!Number.isInteger(kilometres) || kilometres <= 0) {
-    throw new RangeError('Le nombre de kilomètres doit être un entier strictement positif.');
+  if (montantTtcCentimes > MONTANT_MAX_CENTIMES) {
+    throw new RangeError('Le montant TTC d\'une dépense est limité à 10 000,00 € (1 000 000 centimes) : la dépense est refusée.');
   }
 }
 
-/** Vérifie un nombre de nuits d'hôtel : un entier supérieur ou égal à 1. */
+/** Vérifie un nombre de kilomètres d'un trajet : un entier strictement positif, de 2 000 km au plus. */
+export function verifierKilometres(kilometres) {
+  if (!Number.isSafeInteger(kilometres) || kilometres <= 0) {
+    throw new RangeError('Le nombre de kilomètres doit être un entier strictement positif.');
+  }
+  if (kilometres > KILOMETRES_MAX_TRAJET) {
+    throw new RangeError('Le nombre de kilomètres d\'une indemnité kilométrique est limité à 2 000 km par trajet.');
+  }
+}
+
+/** Vérifie un kilométrage de l'année : un entier positif ou nul, de 100 000 km au plus ; le message commence par le libellé reçu. */
+export function verifierKilometrageAnnuel(kilometrage, libelle) {
+  if (!Number.isSafeInteger(kilometrage) || kilometrage < 0) {
+    throw new RangeError(`${libelle} doit être un entier positif ou nul.`);
+  }
+  if (kilometrage > KILOMETRAGE_ANNUEL_MAX) {
+    throw new RangeError(`${libelle} est limité à 100 000 km par an.`);
+  }
+}
+
+/** Vérifie un nombre de nuits d'hôtel : un entier de 1 à 31. */
 export function verifierNuits(nuits) {
-  if (!Number.isInteger(nuits) || nuits < 1) {
+  if (!Number.isSafeInteger(nuits) || nuits < 1) {
     throw new RangeError('Le nombre de nuits d\'hôtel doit être un entier supérieur ou égal à 1.');
+  }
+  if (nuits > NUITS_MAX) {
+    throw new RangeError('Le nombre de nuits d\'hôtel d\'une dépense est limité à 31.');
   }
 }

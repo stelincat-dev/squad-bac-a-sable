@@ -1,7 +1,7 @@
 // Barème kilométrique fiscal 2025-2026 des voitures, fourni par le client. Calculs en entiers : taux en millièmes d'euro par km, parts fixes en centimes.
 
 import { arrondirCentime } from './arrondi.js';
-import { verifierKilometres } from './validation.js';
+import { verifierKilometrageAnnuel, verifierKilometres } from './validation.js';
 
 const LIGNES_2025_2026 = Object.freeze([
   Object.freeze({ puissance: 3, taux1: 529, taux2: 316, fixe2: 106500, taux3: 370 }),
@@ -34,11 +34,11 @@ export function verifierPuissance(puissance) {
   }
 }
 
-/** Valeur du barème, en millièmes d'euro, pour d km parcourus dans l'année avec un véhicule de cette puissance. */
+/** Valeur du barème, en millièmes d'euro, pour d km parcourus dans l'année (100 000 km au plus) avec un véhicule de cette puissance. */
 export function bareme(annee, puissance, d) {
   verifierAnneeBareme(annee);
   verifierPuissance(puissance);
-  if (!Number.isInteger(d) || d < 0) throw new RangeError('Le kilométrage de l\'année doit être un entier positif ou nul.');
+  verifierKilometrageAnnuel(d, 'Le kilométrage de l\'année');
   const ligne = BAREME_KILOMETRIQUE[annee][Math.min(puissance, 7) - 3];
   if (d <= SEUILS_TRANCHES[0]) return d * ligne.taux1;
   if (d <= SEUILS_TRANCHES[1]) return d * ligne.taux2 + ligne.fixe2 * 10;
@@ -48,9 +48,7 @@ export function bareme(annee, puissance, d) {
 /** Indemnité kilométrique d'un trajet, en centimes : barème(cumul après) − barème(cumul avant), arrondie une seule fois au centime. */
 export function indemniteKilometrique({ annee, puissance, cumulAvant, kilometres }) {
   verifierKilometres(kilometres);
-  if (!Number.isInteger(cumulAvant) || cumulAvant < 0) {
-    throw new RangeError('Le kilométrage déjà remboursé dans l\'année doit être un entier positif ou nul.');
-  }
+  verifierKilometrageAnnuel(cumulAvant, 'Le kilométrage déjà remboursé dans l\'année');
   const milliemes = bareme(annee, puissance, cumulAvant + kilometres) - bareme(annee, puissance, cumulAvant);
   return arrondirCentime(milliemes);
 }
