@@ -21,12 +21,13 @@ test('critère 1 : une dépense garde tous ses champs (TVA, « à Paris », just
   assert.equal(ajouterDepense(NOTE, { ...hotel, nuits: undefined }).depenses[0].nuits, 1);
 });
 
-test('critère 1 : les cinq natures prévues sont acceptées', () => {
-  assert.deepEqual(NATURES, ['repas', 'hotel', 'transport', 'indemnites-kilometriques', 'autre']);
+test('critère 1 : les sept natures prévues sont acceptées', () => {
+  assert.deepEqual(NATURES, ['repas', 'hotel', 'transport', 'indemnites-kilometriques', 'autre', 'peage', 'parking']);
   let note = NOTE;
   for (const nature of ['repas', 'hotel', 'transport', 'autre']) note = ajouterDepense(note, { ...REPAS, nature });
+  for (const nature of ['peage', 'parking']) note = ajouterDepense(note, { date: REPAS.date, nature, montantTtcCentimes: 1850 });
   note = ajouterDepense(note, IK);
-  assert.equal(note.depenses.length, 5);
+  assert.equal(note.depenses.length, 7);
 });
 
 test('critère 1 : une note sans salarié ou avec un mois invalide est refusée', () => {

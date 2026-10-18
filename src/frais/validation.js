@@ -1,10 +1,20 @@
 // Contrôles communs du module de frais : natures, taux de TVA, dates « AAAA-MM-JJ », mois « AAAA-MM » et salarié. Calculs en UTC, sans horloge ni état.
 
-/** Natures de dépense acceptées : repas, hôtel, transport, indemnités kilométriques et autre. */
-export const NATURES = Object.freeze(['repas', 'hotel', 'transport', 'indemnites-kilometriques', 'autre']);
+/** Natures de dépense acceptées : repas, hôtel, transport, indemnités kilométriques, autre, péage et parking. */
+export const NATURES = Object.freeze(['repas', 'hotel', 'transport', 'indemnites-kilometriques', 'autre', 'peage', 'parking']);
 
 /** Taux de TVA acceptés, en pourcentage : 5,5 %, 10 % et 20 %. */
 export const TAUX_TVA = Object.freeze([5.5, 10, 20]);
+
+/** Taux de TVA d'un péage, en pourcentage : seul taux admis, appliqué aussi quand aucun taux n'est saisi. */
+export const TAUX_TVA_PEAGE = 20;
+
+/** Vérifie qu'un péage porte le taux de 20 % ou aucun taux ; lève une RangeError sinon, sans effet sur les autres natures. */
+export function verifierTauxTvaPeage(nature, tauxTva) {
+  if (nature === 'peage' && tauxTva !== undefined && tauxTva !== TAUX_TVA_PEAGE) {
+    throw new RangeError('Le taux de TVA d\'un péage est de 20 % : saisissez 20 % ou laissez le taux vide.');
+  }
+}
 
 /** Lit une date « AAAA-MM-JJ » qui existe et rend { annee, mois, jour } ; lève une RangeError sinon. */
 export function lireDate(texte, nom) {

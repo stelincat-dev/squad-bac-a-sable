@@ -115,8 +115,8 @@ Brique de calcul pure, comme le module de congés : elle ne lit jamais l'horloge
 
 - **Montants** : en centimes entiers (`montantTtcCentimes: 1850` pour 18,50 €), en entrée comme en sortie. Chaque montant remboursable est arrondi au centime, arrondi commercial (la demie va au centime supérieur).
 - **Dates** : chaînes `AAAA-MM-JJ`, lues en UTC ; **mois** de la note : `AAAA-MM`.
-- **Natures** (`NATURES`) : `repas`, `hotel`, `transport`, `indemnites-kilometriques`, `autre`.
-- **Taux de TVA** (`TAUX_TVA`) : 5,5, 10 ou 20, facultatif. Il sert au calcul de la TVA récupérable (voir `tvaRecuperableDepense`).
+- **Natures** (`NATURES`) : `repas`, `hotel`, `transport`, `indemnites-kilometriques`, `autre`, `peage`, `parking` (libellés sans accent : `péage` est refusé comme nature inconnue).
+- **Taux de TVA** (`TAUX_TVA`) : 5,5, 10 ou 20, facultatif. Il sert au calcul de la TVA récupérable (voir `tvaRecuperableDepense`). Pour un péage, seul `TAUX_TVA_PEAGE` (20) est admis, ou aucun taux.
 
 ### `creerNote({ salarie, mois })`
 
@@ -126,9 +126,9 @@ Rend une note vide `{ salarie, mois, depenses: [] }`. `salarie` : chaîne non vi
 
 Rend une nouvelle note, avec la dépense contrôlée ajoutée à la fin de `depenses`. Champs d'une dépense :
 
-- `date` : dans le mois de la note ; `nature` : une des cinq natures ;
+- `date` : dans le mois de la note ; `nature` : une des sept natures ;
 - `montantTtcCentimes` : entier strictement positif, pour toutes les natures sauf `indemnites-kilometriques`, où il est interdit (le montant est calculé) ;
-- `tauxTva` (facultatif), `aParis` (booléen, `false` par défaut), `justificatif` (référence, chaîne non vide, facultative) ;
+- `tauxTva` (facultatif ; pour `peage`, 20 ou absent), `aParis` (booléen, `false` par défaut ; refusé pour `peage` et `parking`, et absent de leur copie), `justificatif` (référence, chaîne non vide, facultative) ;
 - `nuits` : pour `hotel` seulement, entier ≥ 1, `1` par défaut ;
 - `kilometres` (entier > 0) et `puissance` (chevaux fiscaux, entier ≥ 3) : pour `indemnites-kilometriques` seulement, datées de 2025 ou 2026.
 
@@ -136,7 +136,7 @@ Doublons refusés : même date, même nature et même montant ; pour les indemni
 
 ### `montantRemboursable(depense)`
 
-Montant remboursable, en centimes, d'une dépense autre qu'une indemnité kilométrique : repas plafonné à 25 € (30 € si `aParis`), hôtel plafonné à 120 € par nuit (150 € si `aParis`), transport et autre sans plafond. Les plafonds sont exportés dans `PLAFONDS`.
+Montant remboursable, en centimes, d'une dépense autre qu'une indemnité kilométrique : repas plafonné à 25 € (30 € si `aParis`), hôtel plafonné à 120 € par nuit (150 € si `aParis`), transport, autre, péage et parking sans plafond. Péages et parkings n'entrent pas dans le cumul kilométrique. Les plafonds sont exportés dans `PLAFONDS`.
 
 ### `remboursementsNote(note, { kilometrageDejaRembourse })`
 
@@ -165,7 +165,8 @@ indemniteKilometrique({ annee: 2026, puissance: 5, cumulAvant: 4900, kilometres:
 TVA récupérable d'une ligne, en centimes :
 
 - `0` pour `indemnites-kilometriques` et `autre`, même si un taux est saisi, et `0` pour une ligne sans `tauxTva` ;
-- repas, hôtel, transport : TVA du justificatif `arrondi(TTC × taux ÷ (100 + taux))`, calculée en entiers ;
+- repas, hôtel, transport, parking : TVA du justificatif `arrondi(TTC × taux ÷ (100 + taux))`, calculée en entiers ;
+- péage : même calcul, toujours à 20 %, même sans `tauxTva` ; une ligne de péage à un autre taux fait refuser le calcul ;
 - ligne plafonnée (`montantRemboursableCentimes` < `montantTtcCentimes`) : cette TVA, déjà arrondie, multipliée par `montantRemboursableCentimes ÷ montantTtcCentimes`, puis arrondie au centime.
 
 `verifierTauxTva(tauxTva)` refuse tout taux autre que 5,5, 10 ou 20 ; un taux absent est accepté.
@@ -183,7 +184,7 @@ tvaRecuperableNote(depenses);    // 441 (1,68 € + 2,73 €)
 
 ### Erreurs
 
-Tout refus lève une `RangeError` avec un message en français : nature inconnue (le message la nomme), date mal formée, inexistante ou hors du mois de la note, doublon, montant nul ou négatif, kilomètres nuls ou négatifs, taux de TVA hors de 5,5, 10 et 20, indemnité datée hors de 2025-2026, puissance inférieure à 3 CV, nombre de nuits invalide, montant saisi pour une indemnité kilométrique, champ propre à une autre nature, salarié ou mois de note invalide. Pour les totaux : dépenses qui ne forment pas un tableau, ou montant remboursable qui n'est pas un entier positif ou nul ou qui dépasse le montant TTC.
+Tout refus lève une `RangeError` avec un message en français : nature inconnue (le message la nomme), date mal formée, inexistante ou hors du mois de la note, doublon, montant nul ou négatif, kilomètres nuls ou négatifs, taux de TVA hors de 5,5, 10 et 20, péage à un taux autre que 20, champ « à Paris » ou « nuits » sur un péage ou un parking, indemnité datée hors de 2025-2026, puissance inférieure à 3 CV, nombre de nuits invalide, montant saisi pour une indemnité kilométrique, champ propre à une autre nature, salarié ou mois de note invalide. Pour les totaux : dépenses qui ne forment pas un tableau, ou montant remboursable qui n'est pas un entier positif ou nul ou qui dépasse le montant TTC.
 
 ### Circuit de validation (`transitionNote`)
 

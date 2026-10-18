@@ -3,9 +3,12 @@
 import { verifierAnneeBareme, verifierPuissance } from './bareme.js';
 import {
   TAUX_TVA, lireDate, verifierKilometres, verifierMois, verifierMontant, verifierNature, verifierNuits, verifierSalarie,
+  verifierTauxTvaPeage,
 } from './validation.js';
 
 const IK = 'indemnites-kilometriques';
+// Natures sans lieu : le champ « à Paris » y est refusé et n'est pas gardé dans la copie.
+const SANS_LIEU = Object.freeze(['peage', 'parking']);
 
 /** Crée une note de frais vide { salarie, mois, depenses } pour un salarié et un mois « AAAA-MM ». */
 export function creerNote({ salarie, mois } = {}) {
@@ -42,11 +45,13 @@ function normaliserDepense(depense, mois) {
   if (tauxTva !== undefined && !TAUX_TVA.includes(tauxTva)) {
     throw new RangeError('Le taux de TVA doit être 5,5, 10 ou 20 (en pourcentage), ou être absent.');
   }
+  verifierTauxTvaPeage(nature, tauxTva);
+  if (SANS_LIEU.includes(nature)) refuserChamp(depense, 'aParis', nature);
   if (typeof aParis !== 'boolean') throw new RangeError('L\'indicateur « à Paris » doit être vrai ou faux.');
   if (justificatif !== undefined && (typeof justificatif !== 'string' || justificatif === '')) {
     throw new RangeError('La référence de justificatif doit être une chaîne non vide, ou être absente.');
   }
-  const copie = { date, nature, aParis };
+  const copie = SANS_LIEU.includes(nature) ? { date, nature } : { date, nature, aParis };
   if (tauxTva !== undefined) copie.tauxTva = tauxTva;
   if (justificatif !== undefined) copie.justificatif = justificatif;
   if (nature === IK) {
