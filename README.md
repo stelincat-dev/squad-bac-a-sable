@@ -155,3 +155,45 @@ indemniteKilometrique({ annee: 2026, puissance: 5, cumulAvant: 4900, kilometres:
 ### Erreurs
 
 Tout refus lève une `RangeError` avec un message en français : nature inconnue (le message la nomme), date mal formée, inexistante ou hors du mois de la note, doublon, montant nul ou négatif, kilomètres nuls ou négatifs, taux de TVA hors de 5,5, 10 et 20, indemnité datée hors de 2025-2026, puissance inférieure à 3 CV, nombre de nuits invalide, montant saisi pour une indemnité kilométrique, champ propre à une autre nature, salarié ou mois de note invalide.
+
+### Circuit de validation (`transitionNote`)
+
+Fait avancer une note dans le circuit : `brouillon` → `soumise` → `validee-manager` → (`validee-df`, seulement si le total remboursable dépasse strictement 1 500 €) → `controlee` → `payee`. Le module ne calcule pas le total remboursable, ne gère pas le rattachement au manager et ne stocke pas les justificatifs : il reçoit ces informations. Une note créée par `creerNote`, sans `etat`, est en `brouillon` ; sans `historique`, son historique est vide.
+
+`transitionNote({ note, action, acteur, managerAuteur, totalRemboursableCentimes, motif, datePaiement, aujourdhui })`
+
+- `note` : `{ salarie, depenses, etat?, historique?, dateSoumission?, datePaiement? }` ; `salarie` est l'auteur.
+- `action` (`ACTIONS_NOTE`) : `soumettre`, `valider`, `refuser`, `controler`, `payer`.
+- `acteur` : `{ id, role }`, rôle parmi `ROLES` : `salarie`, `manager`, `directeur-financier`, `comptabilite`.
+- `managerAuteur` : identifiant du manager rattaché à l'auteur, ou absent.
+- `totalRemboursableCentimes` : total remboursable TTC de la note, entier de centimes positif ou nul (seuil `SEUIL_DF_CENTIMES` = 150000).
+- `motif` : texte du refus ; `datePaiement` : date `AAAA-MM-JJ`, obligatoire pour `payer` ; `aujourdhui` : date du jour `AAAA-MM-JJ`.
+
+Qui fait quoi, et à quelle étape :
+
+| Action | État de départ | Acteur | État d'arrivée |
+| --- | --- | --- | --- |
+| `soumettre` | `brouillon` | l'auteur, rôle `salarie` | `soumise` |
+| `valider` | `soumise` | le manager rattaché | `validee-manager` |
+| `valider` | `validee-manager`, total > 1 500 € | le directeur financier | `validee-df` |
+| `controler` | `validee-manager`, total ≤ 1 500 €, ou `validee-df` | la comptabilité | `controlee` |
+| `payer` | `controlee` | la comptabilité | `payee` |
+| `refuser` | `soumise` | le manager rattaché | `brouillon` |
+| `refuser` | `validee-manager`, total > 1 500 € | le directeur financier | `brouillon` |
+| `refuser` | `validee-manager`, total ≤ 1 500 €, `validee-df` ou `controlee` | la comptabilité | `brouillon` |
+
+Une note `payee` est définitive. Après un refus, une nouvelle soumission repart de la validation du manager.
+
+Rend `{ ok: true, note }`, avec une copie de la note dans son nouvel état et une entrée `{ action, par, role, de, vers, date }` ajoutée à la fin de `historique` (plus `motif` pour un refus). `soumettre` enregistre `dateSoumission`, `payer` enregistre `datePaiement`. Sinon rend `{ ok: false, motifs }`, sans exception, avec les codes :
+
+- `transition-interdite` : l'action n'est pas possible à l'état de la note (étape sautée, mauvaise branche du seuil, note payée) ;
+- `non-autorise` : l'acteur n'a pas le rôle prévu à cette étape, n'est pas l'auteur (soumission) ou n'est pas le manager rattaché ;
+- `auto-validation` : le manager ou le directeur financier valide sa propre note ;
+- `manager-absent` : soumission sans manager rattaché ;
+- `justificatif-manquant` : à la soumission, une dépense de 50 € ou plus (`SEUIL_JUSTIFICATIF_CENTIMES`), hors indemnités kilométriques, n'a pas de référence de justificatif ;
+- `motif-obligatoire` : refus sans motif, ou avec un motif vide ou fait d'espaces ;
+- `date-paiement-invalide` : date de paiement après `aujourdhui` ou avant `dateSoumission`.
+
+`justificatifsManquants(depenses)` rend les rangs (à partir de 1) des dépenses sans justificatif obligatoire.
+
+Les erreurs d'appel lèvent une `RangeError` : action ou rôle inconnus, note absente ou mal formée (état inconnu, historique qui n'est pas un tableau, montant qui n'est pas un entier de centimes), acteur sans identifiant, `managerAuteur` vide, total remboursable qui n'est pas un entier positif ou nul, date du jour ou date de paiement invalide ou absente.
