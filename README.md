@@ -108,3 +108,50 @@ Les erreurs d'appel lèvent une `RangeError` avec un message en français :
 Les messages d'erreur ne reprennent jamais une valeur reçue qui n'est pas une chaîne.
 
 Les constantes `SITES`, `ETATS` et `ACTIONS` sont aussi exportées : les listes figées des sites, des états et des actions acceptés.
+
+## Contrat du module de frais (`src/frais/`)
+
+Brique de calcul pure, comme le module de congés : elle ne lit jamais l'horloge du système, n'écrit rien, ne garde aucun état et ne modifie jamais les objets reçus. Point d'entrée : `src/frais/index.js`.
+
+- **Montants** : en centimes entiers (`montantTtcCentimes: 1850` pour 18,50 €), en entrée comme en sortie. Chaque montant remboursable est arrondi au centime, arrondi commercial (la demie va au centime supérieur).
+- **Dates** : chaînes `AAAA-MM-JJ`, lues en UTC ; **mois** de la note : `AAAA-MM`.
+- **Natures** (`NATURES`) : `repas`, `hotel`, `transport`, `indemnites-kilometriques`, `autre`.
+- **Taux de TVA** (`TAUX_TVA`) : 5,5, 10 ou 20, facultatif. Il est seulement enregistré, aucun calcul de TVA n'est fait ici.
+
+### `creerNote({ salarie, mois })`
+
+Rend une note vide `{ salarie, mois, depenses: [] }`. `salarie` : chaîne non vide.
+
+### `ajouterDepense(note, depense)`
+
+Rend une nouvelle note, avec la dépense contrôlée ajoutée à la fin de `depenses`. Champs d'une dépense :
+
+- `date` : dans le mois de la note ; `nature` : une des cinq natures ;
+- `montantTtcCentimes` : entier strictement positif, pour toutes les natures sauf `indemnites-kilometriques`, où il est interdit (le montant est calculé) ;
+- `tauxTva` (facultatif), `aParis` (booléen, `false` par défaut), `justificatif` (référence, chaîne non vide, facultative) ;
+- `nuits` : pour `hotel` seulement, entier ≥ 1, `1` par défaut ;
+- `kilometres` (entier > 0) et `puissance` (chevaux fiscaux, entier ≥ 3) : pour `indemnites-kilometriques` seulement, datées de 2025 ou 2026.
+
+Doublons refusés : même date, même nature et même montant ; pour les indemnités kilométriques, même date et mêmes kilomètres.
+
+### `montantRemboursable(depense)`
+
+Montant remboursable, en centimes, d'une dépense autre qu'une indemnité kilométrique : repas plafonné à 25 € (30 € si `aParis`), hôtel plafonné à 120 € par nuit (150 € si `aParis`), transport et autre sans plafond. Les plafonds sont exportés dans `PLAFONDS`.
+
+### `remboursementsNote(note, { kilometrageDejaRembourse })`
+
+Rend, dans l'ordre de la note, une copie de chaque dépense avec `montantRemboursableCentimes`. `kilometrageDejaRembourse` : kilomètres déjà remboursés dans l'année, entier ≥ 0, obligatoire si la note contient des indemnités kilométriques. Le cumul avance d'une indemnité à la suivante par ordre de date, puis d'ordre de saisie. Le total de la note n'est pas calculé ici.
+
+### `indemniteKilometrique({ annee, puissance, cumulAvant, kilometres })` et `bareme(annee, puissance, d)`
+
+`bareme` rend la valeur du barème fiscal 2025-2026 (`BAREME_KILOMETRIQUE`) pour `d` km dans l'année, en millièmes d'euro : `d × taux` jusqu'à 5 000 km, `d × taux + part fixe` de 5 001 à 20 000 km, `d × taux` au-delà ; 7 CV et plus partagent une ligne. `indemniteKilometrique` rend, en centimes, `bareme(cumulAvant + kilometres) − bareme(cumulAvant)`, arrondi une seule fois.
+
+```js
+import { indemniteKilometrique } from './src/frais/index.js';
+indemniteKilometrique({ annee: 2026, puissance: 5, cumulAvant: 4000, kilometres: 120 }); // 7632 (76,32 €)
+indemniteKilometrique({ annee: 2026, puissance: 5, cumulAvant: 4900, kilometres: 200 }); // 9930 (99,30 €)
+```
+
+### Erreurs
+
+Tout refus lève une `RangeError` avec un message en français : nature inconnue (le message la nomme), date mal formée, inexistante ou hors du mois de la note, doublon, montant nul ou négatif, kilomètres nuls ou négatifs, taux de TVA hors de 5,5, 10 et 20, indemnité datée hors de 2025-2026, puissance inférieure à 3 CV, nombre de nuits invalide, montant saisi pour une indemnité kilométrique, champ propre à une autre nature, salarié ou mois de note invalide.
